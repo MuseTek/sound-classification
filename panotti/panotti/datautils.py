@@ -10,8 +10,8 @@ from os.path import isfile, splitext
 from imageio import imread, imwrite
 import glob
 from skimage import img_as_ubyte
-
-
+import shutil
+import random
 def listdir_nohidden(path,subdirs_only=False, skip_csv=True):
     '''
     ignore hidden files. call should be inside list().  subdirs_only means it ignores regular files
@@ -112,8 +112,6 @@ def get_sample_dimensions(class_names, path='Preproc/Train/'):
     print("   get_sample_dimensions: "+infilename+": melgram.shape = ",melgram.shape)
     return melgram.shape
 
-
-def encode_class(class_name, class_names):  # makes a "one-hot" vector for each class name called
     try:
         idx = class_names.index(class_name)
         vec = np.zeros(len(class_names))
@@ -191,7 +189,7 @@ def nearest_multiple( a, b ):   # returns number smaller than a, which is the ne
     return  int(a/b) * b
 
 
-# can be used for test dataset as well
+
 def build_dataset(path="Preproc/Train/", load_frac=1.0, batch_size=None, tile=False):
 
     class_names = get_class_names(path=path)
@@ -259,3 +257,92 @@ def build_dataset(path="Preproc/Train/", load_frac=1.0, batch_size=None, tile=Fa
     X, Y, paths = shuffle_XY_paths(X,Y,paths)  # mix up classes, & files within classes
 
     return X, Y, paths, class_names
+def data_generator(path="Preproc/Train/", load_frac=1.0, batch_size=None, tile=False):
+    #pdb.set_trace()
+    class_names = get_class_names(path=path)
+    print("class_names = ",class_names)
+    nb_classes = len(class_names)
+
+    mel_dims = get_sample_dimensions(class_names,path=path)  # get dims of sample data file
+    if (tile):
+        ldims = list(mel_dims)
+        ldims[3] = 3
+        mel_dims = tuple(ldims)
+
+    samples_per_class = []
+    for name in class_names:
+        class_files = os.listdir(path+name)
+        samples_per_class.append(class_files)
+
+
+
+    while True:
+        #keep track of how many samples have been created
+        samples_created = 0
+        X = np.zeros((batch_size, mel_dims[1], mel_dims[2], mel_dims[3]))
+        Y = np.zeros((batch_size, nb_classes))
+        paths = []
+        while(samples_created < batch_size):
+            #pick a random integer between 0 and nb_classes
+            class_num = randint(0, nb_classes-1)
+
+
+            classname = class_names[class_num]
+
+            this_Y = np.array(encode_class(classname,class_names) )
+            this_Y = this_Y[np.newaxis,:]
+
+
+            #now get the file to load into X
+            num_files = len(samples_per_class[class_num])
+            #pick a random file from the class
+            file_num = randint(0,num_files)
+            infilename= samples_per_class[class_num][file_num]
+
+            audio_path = path + classname + '/' + infilename
+            #auto-detect load method based on filename extension
+            melgram = load_melgram(audio_path)
+
+            if (tile) and (melgram.shape != mel_dims):
+                melgram = np.tile(melgram, 3)
+            elif (melgram.shape != mel_dims):
+                print("\n\n    ERROR: mel_dims = ",mel_dims,", melgram.shape = ",melgram.shape)
+
+            X[samples_created,:,:] = melgram
+            Y[samples_created,:] = this_Y
+            samples_created += 1
+            paths.append(audio_path)
+        yield X, Y, paths, class_names
+
+def get_random_file(input_dir):
+	'''
+	Function traverses entire direcotry and sub dirs to pick one random file
+	'''
+	n=0
+	random.seed();
+	for root, dirs, files in os.walk(input_dir):
+		for name in files: 
+			n=n+1
+			if random.uniform(0, n) < 1:
+				rfile=os.path.join(root, name)
+				rname = name
+	return rfile
+
+
+def create_validation_set(val_path, test_path, split_amount=.5):
+	'''
+	moves split amount of the number of files in the testing dir to a new validation dir
+	'''
+	if not os.path.exists(val_path):
+		os.makedirs(val_path)
+	path, dirs, files = next(os.walk(test_path))
+	num_test = sum([len(files) for r, d, files in os.walk(test_path)])
+	print(num_test)
+	#now move the specified percentage of files from test to validate
+	for i in range(int(split_amount*num_test)):
+		random_file = get_random_file(test_path)
+		#check if folder has been created in validation location
+		new_loc = val_path+random_file[len(test_path):]
+		if not os.path.exists(new_loc.rsplit('/',1)[0]):
+			os.makedirs(new_loc.rsplit('/',1)[0]) 
+		shutil.move(random_file,new_loc)	

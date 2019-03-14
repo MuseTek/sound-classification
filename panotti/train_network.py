@@ -15,14 +15,14 @@ import numpy as np
 import librosa
 from panotti.models import *
 from panotti.datautils import *
-#from keras.callbacks import ModelCheckpoint #,EarlyStopping
+from keras.callbacks import ModelCheckpoint,EarlyStopping
 import os
 from os.path import isfile
 from timeit import default_timer as timer
 from panotti.multi_gpu import MultiGPUModelCheckpoint
 
 
-def train_network(weights_file="weights.hdf5", classpath="Preproc/Train/", epochs=50, batch_size=20, val_split=0.25,tile=False):
+def train_network(weights_file="weights.hdf5", classpath="Preproc/Train/", epochs=1000, batch_size=20, val_split=0.25,tile=False):
     np.random.seed(1)
 
     # Get the data
@@ -34,10 +34,10 @@ def train_network(weights_file="weights.hdf5", classpath="Preproc/Train/", epoch
     save_best_only = (val_split > 1e-6)
     checkpointer = MultiGPUModelCheckpoint(filepath=weights_file, verbose=1, save_best_only=save_best_only,
           serial_model=serial_model, period=1, class_names=class_names)
-    #earlystopping = EarlyStopping(patience=12)
-
+    earlystopping = EarlyStopping(patience=100)
+    # data_gen = data_generator('/home/dormuth/MuseTek/sound-classification/panotti/Preproc/Train/', load_frac = .01,batch_size = 20)
     model.fit(X_train, Y_train, batch_size=batch_size, epochs=epochs, shuffle=True,
-          verbose=1, callbacks=[checkpointer], validation_split=val_split)  # validation_data=(X_val, Y_val),
+          verbose=1, callbacks=[checkpointer,earlystopping], validation_split=val_split)  # validation_data=(X_val, Y_val),
 
     # Score the model against Test dataset
     X_test, Y_test, paths_test, class_names_test  = build_dataset(path=classpath+"../Test/", tile=tile)
@@ -54,7 +54,7 @@ if __name__ == '__main__':
         help='weights file in hdf5 format', default="weights.hdf5")
     parser.add_argument('-c', '--classpath', #type=argparse.string,
         help='Train dataset directory with list of classes', default="Preproc/Train/")
-    parser.add_argument('--epochs', default=20, type=int, help="Number of iterations to train for")
+    parser.add_argument('--epochs', default=1000, type=int, help="Number of iterations to train for")
     parser.add_argument('--batch_size', default=40, type=int, help="Number of clips to send to GPU at once")
     parser.add_argument('--val', default=0.25, type=float, help="Fraction of train to split off for validation")
     parser.add_argument("--tile", help="tile mono spectrograms 3 times for use with imagenet models",action="store_true")

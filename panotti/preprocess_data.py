@@ -14,7 +14,7 @@ from functools import partial
 from imageio import imwrite
 import multiprocessing as mp
 from utils.resolve_osx_aliases import resolve_osx_alias
-
+import pdb
 # this is either just the regular shape, or it returns a leading 1 for mono
 def get_canonical_shape(signal):
     if len(signal.shape) == 1:
@@ -27,19 +27,26 @@ def find_max_shape(path, mono=False, sr=None, dur=None, clean=False):
     if (mono) and (sr is not None) and (dur is not None):   # special case for speedy testing
         return [1, int(sr*dur)]
     shapes = []
+    misses = 0
     for dirname, dirnames, filenames in os.walk(path):
         for filename in filenames:
             if not (filename.startswith('.') or ('.csv' in filename)):    # ignore hidden files & CSVs
                 filepath = os.path.join(dirname, filename)
                 try:
                     signal, sr = librosa.load(filepath, mono=mono, sr=sr)
+                   
                 except NoBackendError as e:
+                    
                     print("Could not open audio file {}".format(filepath))
                     raise e
+                except:
+                    misses += 1
+                    os.rename(filepath, "./Missing/"+filename)
+                    continue
                 if (clean):                           # Just take the first file and exit
                     return get_canonical_shape(signal)
                 shapes.append(get_canonical_shape(signal))
-
+    pdb.set_trace()
     return (max(s[0] for s in shapes), max(s[1] for s in shapes))
 
 
@@ -156,9 +163,15 @@ def preprocess_dataset(inpath="Samples/", outpath="Preproc/", train_percentage=0
             # make new Preproc/ subdirectories for class
             if not os.path.exists(train_outpath+classname):
                 print("Making directory ",train_outpath+classname)
-                os.mkdir( train_outpath+classname );
+                try:
+                    os.mkdir( train_outpath+classname );
+                except FileExistsError:
+                    pass
                 if not nosplit:
-                    os.mkdir( test_outpath+classname );
+                    try:
+                        os.mkdir( test_outpath+classname );
+                    except:
+                        pass
             dirname = inpath+subdir+classname
             class_files = list(listdir_nohidden(dirname))   # all filenames for this class, skip hidden files
             class_files.sort()
